@@ -1,0 +1,9 @@
+config.ini
+*.pdf
+.env
+__pycache__/
+*.log
+backup.ini
+rclone.conf
+*.cripto
+*.backup

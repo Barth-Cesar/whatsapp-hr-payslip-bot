@@ -1,0 +1,19 @@
+; Copie para backup.ini e preencha. NUNCA publique o backup.ini real.
+
+[banco]
+host = localhost
+porta = 5432
+banco = rh_database
+usuario = postgres
+senha = TROQUE_AQUI
+; caminho do pg_dump, se não estiver no PATH
+pg_dump = pg_dump
+
+[backup]
+pasta_local = D:\ChatbotRH\backup\copias
+; senha usada para criptografar os backups (guarde em local seguro: sem ela não há restauração)
+senha_backup = TROQUE_AQUI
+rclone = rclone
+rclone_config = D:\ChatbotRH\backup\rclone.conf
+; remoto do rclone + pasta no Google Drive (vazio = só backup local)
+remoto = gdrive:Backups/ChatbotRH

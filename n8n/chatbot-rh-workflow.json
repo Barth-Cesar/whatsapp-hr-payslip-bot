@@ -1,0 +1,781 @@
+{
+  "name": "Chatbot RH - Holerites via WhatsApp",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 1) ENTRADA\n**GET** = verificação do webhook pela Meta (responde o hub.challenge).\n**POST** = mensagens dos usuários. O filtro descarta avisos de status (enviado/entregue/lido).",
+        "height": 200,
+        "width": 560,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "82024723-06e0-4f94-96c4-55ca980f004d",
+      "name": "Nota af2338"
+    },
+    {
+      "parameters": {
+        "content": "## 2) CÉREBRO\n**Buscar Contexto**: sessão + colaborador (pelo telefone) + confere CPF, tudo numa consulta.\n**Decidir Ação**: todas as regras e textos do robô (tempos de bloqueio/atendimento no topo do código).\n**Salvar Sessão**: grava o novo estado e a auditoria (LGPD).",
+        "height": 200,
+        "width": 760,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        960,
+        0
+      ],
+      "id": "238a13d5-ebd1-49a8-8818-c14b92b44abe",
+      "name": "Nota 53b2da"
+    },
+    {
+      "parameters": {
+        "content": "## 3) HOLERITE\nBusca os PDFs do colaborador identificado pelo telefone → lê do disco → envia o arquivo para a Meta (/media) → manda como documento.\nSe não achar, oferece outro período. Se o arquivo não abrir, avisa o usuário.",
+        "height": 180,
+        "width": 900,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1952,
+        944
+      ],
+      "id": "ebbe7680-1227-4b47-a8ba-f4a544e76e56",
+      "name": "Nota 2529a2"
+    },
+    {
+      "parameters": {
+        "content": "## CONFIGURAÇÃO\nCredenciais: **Postgres account** e **Header Auth account** (valor: `Bearer` + token permanente).\nO número remetente é lido da própria mensagem (phone_number_id) — ao trocar para o número oficial, nada precisa mudar aqui.",
+        "width": 560,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        992
+      ],
+      "id": "c8b15814-eead-4035-8082-7ba64fa78506",
+      "name": "Nota f2e43d"
+    },
+    {
+      "parameters": {
+        "path": "chatbot-rh",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        48,
+        272
+      ],
+      "id": "511aea9b-cb3d-4ff8-bc65-f56bd1163900",
+      "name": "Verificação da Meta (GET)",
+      "webhookId": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query[\"hub.challenge\"] }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        288,
+        272
+      ],
+      "id": "4ed2542b-8392-4359-ae29-35c9be0b5bba",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chatbot-rh",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        48,
+        560
+      ],
+      "id": "525a69af-be8e-4a3b-b45a-b73205d43da4",
+      "name": "Receber Mensagens WhatsApp (POST)",
+      "webhookId": "00000000-0000-0000-0000-000000000002"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c5754a48-bd36-494a-b8be-6515b54760d6",
+              "leftValue": "={{ $json.body.entry[0].changes[0].value.messages }}",
+              "rightValue": "",
+              "operator": {
+                "type": "array",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        288,
+        560
+      ],
+      "id": "d5d37ae9-99b8-4078-9bb7-d76872727482",
+      "name": "É mensagem?"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Chatbot RH - Holerites via WhatsApp | Autor: César Barth · 2026\n// Extrai da mensagem da Meta só o que o robô precisa, já padronizado.\nconst body = $json.body || {};\nconst value = body.entry?.[0]?.changes?.[0]?.value || {};\nconst msg = value.messages?.[0] || {};\nconst contato = value.contacts?.[0] || {};\n\n// Telefone: só números. No Brasil o WhatsApp às vezes manda sem o 9º dígito\n// (55 + DDD + 8 dígitos = 12 dígitos). Recolocamos o 9 para padronizar.\nlet tel = String(msg.from || '').replace(/\\D/g, '');\nif (tel.startsWith('55') && tel.length === 12) {\n  tel = tel.slice(0, 4) + '9' + tel.slice(4);\n}\n\n// Texto digitado ou ID do botão clicado\nlet texto = '';\nif (msg.type === 'text') texto = msg.text?.body || '';\nelse if (msg.type === 'interactive') texto = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || '';\nelse if (msg.type === 'button') texto = msg.button?.payload || msg.button?.text || '';\ntexto = String(texto).trim();\n\n// Possível confirmação de CPF: aceita os 5 primeiros dígitos ou o CPF inteiro (11 dígitos)\nconst digitos = texto.replace(/\\D/g, '');\nlet cpf5 = '';\nif (digitos.length === 5) cpf5 = digitos;\nelse if (digitos.length === 11) cpf5 = digitos.slice(0, 5);\n\nreturn {\n  json: {\n    telefone: tel,\n    ddd: tel.startsWith('55') ? tel.slice(2, 4) : tel.slice(0, 2),\n    final8: tel.slice(-8),\n    nome_perfil: contato.profile?.name || '',\n    tipo_msg: msg.type || 'desconhecido',\n    mensagem: texto,\n    cpf5: cpf5,\n    wamid: msg.id || '',\n    timestamp: Number(msg.timestamp || 0),\n    phone_number_id: value.metadata?.phone_number_id || ''\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        560
+      ],
+      "id": "f02971b7-1340-491a-887d-ec032c53c166",
+      "name": "Normalizar Entrada"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH anterior AS (\n  SELECT estado, ultima_interacao, tentativas_cpf, bloqueado_ate, atendimento_ate, ultimo_wamid\n  FROM chatbot_sessoes WHERE telefone = $1\n),\nsessao AS (\n  INSERT INTO chatbot_sessoes (telefone, estado, ultima_interacao)\n  VALUES ($1, 'INICIO', now())\n  ON CONFLICT (telefone) DO UPDATE SET ultima_interacao = now()\n  RETURNING telefone\n)\nSELECT\n  (SELECT count(*) FROM sessao)                                             AS sessao_ok,\n  COALESCE(a.estado, 'INICIO')                                              AS estado,\n  COALESCE(a.tentativas_cpf, 0)                                             AS tentativas_cpf,\n  COALESCE(a.bloqueado_ate > now(), false)                                  AS bloqueado,\n  COALESCE(a.atendimento_ate > now(), false)                                AS em_atendimento,\n  (a.ultima_interacao IS NULL OR a.ultima_interacao < now() - interval '30 minutes') AS sessao_expirada,\n  COALESCE(a.ultimo_wamid = $5, false)                                      AS duplicada,\n  c.id                                                                      AS id_colaborador,\n  c.nome                                                                    AS nome_colaborador,\n  COALESCE(c.ativo, false)                                                  AS colaborador_ativo,\n  CASE WHEN $4 <> '' AND c.id IS NOT NULL\n       THEN left(regexp_replace(c.cpf::text, '\\D', '', 'g'), 5) = $4\n       ELSE false END                                                       AS cpf_confere\nFROM (SELECT 1) AS base\nLEFT JOIN anterior a ON true\nLEFT JOIN LATERAL (\n  SELECT col.id, col.nome, col.cpf, col.ativo\n  FROM colaboradores col,\n       LATERAL (SELECT regexp_replace(col.telefone::text, '\\D', '', 'g') AS d) t\n  WHERE right(t.d, 8) = $3\n    AND (CASE WHEN length(t.d) >= 12 THEN substr(t.d, 3, 2) ELSE substr(t.d, 1, 2) END) = $2\n  ORDER BY col.ativo DESC NULLS LAST\n  LIMIT 1\n) c ON true;\n",
+        "options": {
+          "queryReplacement": "={{ [ $json.telefone, $json.ddd, $json.final8, $json.cpf5, $json.wamid ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        720,
+        560
+      ],
+      "id": "ec100d03-6800-4103-9488-093aee85ba1c",
+      "name": "Buscar Contexto",
+      "credentials": {
+        "postgres": {
+          "id": "SET_YOUR_CREDENTIAL",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Chatbot RH - Holerites via WhatsApp | Autor: César Barth · 2026\n// =====================================================================\n// CÉREBRO DO ROBÔ: olha o estado da conversa + a mensagem recebida e\n// decide o que responder e qual será o próximo estado.\n// Ajuste os textos e os tempos aqui mesmo, se quiser.\n// =====================================================================\nconst EMPRESA = 'Sua Empresa'; // nome que aparece nas mensagens do bot\nconst RH_WHATSAPP = '';            // WhatsApp do RH com DDI e DDD, só números (ex.: 5555999998888). Vazio = mensagem genérica\nconst MAX_TENTATIVAS = 3;          // tentativas de CPF antes de bloquear\nconst BLOQUEIO_MIN = 30;           // minutos de bloqueio após errar o CPF\n\nconst ctx = $json;                                   // resultado do \"Buscar Contexto\"\nconst ent = $('Normalizar Entrada').first().json;    // mensagem padronizada\n\nconst msg = (ent.mensagem || '').toLowerCase();\nconst funcionario = !!ctx.id_colaborador && ctx.colaborador_ativo === true;\nconst nomeCompleto = funcionario ? (ctx.nome_colaborador || '') : (ent.nome_perfil || '');\nconst primeiro = nomeCompleto.trim().split(' ')[0] || '';\nconst primeiroNome = primeiro ? primeiro.charAt(0).toUpperCase() + primeiro.slice(1).toLowerCase() : '';  // CESAR -> Cesar\n\n// ---------- estado atual (com expirações) ----------\nlet estado = ctx.estado || 'INICIO';\nif (estado === 'ATENDIMENTO_HUMANO') estado = 'INICIO';   // modo antigo: o bot não fica mais em silêncio\nif (estado === 'BLOQUEADO' && !ctx.bloqueado) estado = 'INICIO';\nif (ctx.sessao_expirada && estado !== 'BLOQUEADO') estado = 'INICIO';\nconst bloqueadoAgora = estado === 'BLOQUEADO';\n\n// ---------- resultado padrão ----------\nconst r = {\n  acao: 'enviar',              // enviar | buscar_folha | silencio\n  telefone_envio: ent.telefone,\n  id_colaborador: ctx.id_colaborador || 0,\n  estado_anterior: ctx.estado || 'INICIO',\n  novo_estado: estado,\n  // As tentativas de CPF só zeram quando o CPF confere, no bloqueio ou após 30 min sem conversa.\n  // Assim \"menu\" ou \"encerrar\" não dão tentativas extras.\n  tentativas: ctx.sessao_expirada ? 0 : (ctx.tentativas_cpf || 0),\n  bloqueio_min: 0,\n  atendimento_min: 0,\n  evento: '',\n  detalhe: '',\n  tipo_busca: '',\n  mes_ref: '1900-01-01',\n  wamid: ent.wamid,\n  payload: null\n};\n\n// ---------- montadores de mensagem (formato da Meta) ----------\nconst RODAPE_SAIR = 'Para sair a qualquer momento, digite encerrar';\nconst texto = (t) => ({\n  messaging_product: 'whatsapp', to: ent.telefone, type: 'text', text: { body: t }\n});\nconst botoes = (t, lista) => {\n  const temEncerrar = lista.some(([id]) => id === 'encerrar');\n  const interactive = {\n    type: 'button',\n    body: { text: t },\n    action: { buttons: lista.map(([id, title]) => ({ type: 'reply', reply: { id, title } })) }\n  };\n  if (!temEncerrar) interactive.footer = { text: RODAPE_SAIR };  // sem botão Encerrar, avisa no rodapé\n  return { messaging_product: 'whatsapp', to: ent.telefone, type: 'interactive', interactive };\n};\n\n// Títulos de botão: no máximo 20 caracteres e no máximo 3 botões (limites da Meta)\nconst B_ENCERRAR = ['encerrar', 'Encerrar'];\nconst B_MENU     = ['menu', 'Menu inicial'];\nconst B_RH       = ['rh', 'Falar com o RH'];\nconst BOT_MENU_FUNC = [['1', 'Solicitar holerite'], B_RH, B_ENCERRAR];\nconst BOT_MENU_EXT  = [B_RH, B_ENCERRAR];\nconst BOT_RH_SAIR   = [B_RH, B_ENCERRAR];\nconst BOT_VOLTAR    = [B_MENU, B_ENCERRAR];\nconst BOT_PERIODOS  = [['1', 'Último holerite'], ['2', 'Últimos 3'], ['3', 'Escolher o mês']];\nconst BOT_POS       = [['seguir', 'Seguir atendimento'], B_MENU, B_ENCERRAR];\nconst TIPO_BOTAO = { ULTIMA: '1', ULTIMAS_3: '2', MES: '3' };\n\nconst CMD_MENU = ['menu', '0', 'voltar', 'inicio', 'início',\n                  'oi', 'ola', 'olá', 'bom dia', 'boa tarde', 'boa noite'];\nconst CMD_ENCERRAR = ['encerrar', 'sair', 'cancelar', 'tchau', 'obrigado', 'obrigada'];\nconst pediuRH = msg === 'rh' || msg.includes('falar com');\n\n// ---------- ações ----------\nfunction menu(prefixo = '') {\n  r.novo_estado = 'MENU';\n  const saudacao = primeiroNome ? `Olá, ${primeiroNome}!` : 'Olá!';\n  if (prefixo) {\n    // Resposta curta quando a pessoa digitou algo fora das opções\n    r.payload = funcionario\n      ? botoes(`${prefixo}Escolha uma das opções abaixo:`, BOT_MENU_FUNC)\n      : botoes(`${prefixo}Para falar com a equipe do RH da ${EMPRESA}, toque no botão abaixo.`, BOT_MENU_EXT);\n  } else if (funcionario) {\n    r.payload = botoes(`${saudacao} Sou o assistente virtual do RH da ${EMPRESA}. Como posso ajudar?`, BOT_MENU_FUNC);\n  } else {\n    r.payload = botoes(`${saudacao} Sou o assistente virtual do RH da ${EMPRESA}.\\n\\nNão encontrei este número no cadastro de colaboradores. Para qualquer assunto, toque no botão abaixo e fale com a nossa equipe do RH.`, BOT_MENU_EXT);\n  }\n}\n\n// O bot não fica em silêncio: indica o contato do RH e continua disponível\nfunction encaminharRH() {\n  r.novo_estado = 'MENU';\n  r.evento = 'ENCAMINHADO_RH';\n  const contato = RH_WHATSAPP\n    ? `Toque no link para falar com a equipe do RH da ${EMPRESA}:\\nhttps://wa.me/${RH_WHATSAPP}`\n    : `Procure a equipe do RH da ${EMPRESA} pelo WhatsApp ou telefone do setor.`;\n  r.payload = botoes(`👤 ${contato}\\n\\nSe precisar de algo mais por aqui, escolha uma opção:`, BOT_VOLTAR);\n}\n\nfunction encerrar() {\n  r.novo_estado = 'INICIO';\n  r.payload = texto('👋 Atendimento encerrado. Obrigado! Quando precisar, é só mandar uma mensagem por aqui.');\n}\n\n// Mostra as opções de período que a pessoa ainda não usou + \"Menu inicial\"\nfunction seguir(ultimoTipo) {\n  const usado = TIPO_BOTAO[ultimoTipo];\n  const restantes = BOT_PERIODOS.filter(([id]) => id !== usado).slice(0, 2);\n  r.novo_estado = 'AGUARDANDO_PERIODO';\n  r.payload = botoes('Qual outro holerite você precisa?', [...restantes, B_MENU]);\n}\n\nfunction pedirCPF() {\n  r.novo_estado = 'AGUARDANDO_CPF';\n  r.payload = botoes('🔐 Para sua segurança, digite os *5 primeiros dígitos do seu CPF*.\\n' +\n    '(Exemplo: se o CPF é 123.456.789-01, digite 12345)', BOT_RH_SAIR);\n}\n\nfunction buscar(tipo, mes) {\n  r.acao = 'buscar_folha';\n  r.tipo_busca = tipo;\n  if (mes) r.mes_ref = mes;\n  r.novo_estado = 'POS_ENTREGA:' + tipo;  // depois da entrega: Seguir / Menu inicial / Encerrar\n  r.evento = 'PEDIDO_HOLERITE';\n  r.detalhe = tipo + (mes ? ' ' + mes.slice(5, 7) + '/' + mes.slice(0, 4) : '');\n}\n\n// Aceita 05/2026, 5/2026, 05-2026, 05.26 ...\nfunction lerMes(t) {\n  const m = String(t).trim().match(/^(\\d{1,2})\\s*[\\/\\-.]\\s*(\\d{2}|\\d{4})$/);\n  if (!m) return null;\n  const mes = parseInt(m[1], 10);\n  let ano = parseInt(m[2], 10);\n  if (ano < 100) ano += 2000;\n  if (mes < 1 || mes > 12 || ano < 2000 || ano > 2100) return null;\n  return `${ano}-${String(mes).padStart(2, '0')}-01`;\n}\n\n// ---------- regras ----------\nconst tiposEntendidos = ['text', 'interactive', 'button'];\n\nconst idadeMin = ent.timestamp ? (Date.now() / 1000 - ent.timestamp) / 60 : 0;\n\nif (ctx.duplicada) {\n  // A Meta reenviou a mesma mensagem: ignora para não responder em dobro\n  r.acao = 'silencio';\n\n} else if (idadeMin > 10) {\n  // Mensagem atrasada: a Meta reenvia as mensagens que não conseguiu entregar\n  // enquanto o servidor estava fora do ar. Não responde, só registra.\n  r.acao = 'silencio';\n  r.evento = 'MSG_ATRASADA';\n  r.detalhe = `${Math.round(idadeMin)} min de atraso`;\n\n} else if (ent.tipo_msg === 'reaction') {\n  r.acao = 'silencio';\n\n} else if (!tiposEntendidos.includes(ent.tipo_msg)) {\n  r.payload = botoes('Desculpe, por aqui eu só consigo entender mensagens de texto e os botões. 🙂', BOT_VOLTAR);\n\n} else if (CMD_ENCERRAR.includes(msg)) {\n  // Encerrar funciona em qualquer etapa\n  encerrar();\n\n} else if (pediuRH || (estado === 'MENU' && msg === '2')) {\n  // Falar com o RH funciona em qualquer etapa (inclusive bloqueado)\n  encaminharRH();\n\n} else if (estado === 'BLOQUEADO') {\n  r.payload = botoes('🔒 Por segurança, a consulta de documentos deste número está bloqueada temporariamente. ' +\n    'Tente novamente mais tarde ou fale com o RH.', BOT_RH_SAIR);\n\n} else if (CMD_MENU.includes(msg) || estado === 'INICIO') {\n  menu();\n\n} else if ((['AGUARDANDO_CPF', 'AGUARDANDO_PERIODO', 'AGUARDANDO_MES'].includes(estado) || estado.startsWith('POS_ENTREGA')) && !funcionario) {\n  // Segurança: se o cadastro deixou de valer no meio da conversa, volta ao início\n  menu();\n\n} else if (estado === 'MENU') {\n  if (msg === '1' || msg.includes('holerite') || msg.includes('contracheque')) {\n    if (funcionario) {\n      pedirCPF();\n    } else {\n      r.novo_estado = 'MENU';\n      r.evento = 'NAO_CADASTRADO';\n      r.payload = botoes('Não encontrei este número no cadastro de colaboradores ativos, por isso não consigo enviar documentos. ' +\n        'Se você é colaborador, fale com o RH para atualizar seu telefone.', BOT_MENU_EXT);\n    }\n  } else {\n    menu('Não entendi sua resposta. ');\n  }\n\n} else if (estado === 'AGUARDANDO_CPF') {\n  if (!ent.cpf5) {\n    r.payload = botoes('Por favor, digite apenas os *5 primeiros dígitos* do seu CPF (somente números).', BOT_RH_SAIR);\n  } else if (ctx.cpf_confere === true) {\n    r.novo_estado = 'AGUARDANDO_PERIODO';\n    r.tentativas = 0;\n    r.evento = 'CPF_CONFIRMADO';\n    r.payload = botoes('✅ Identidade confirmada! Qual holerite você precisa?', BOT_PERIODOS);\n  } else {\n    const t = r.tentativas + 1;\n    if (t >= MAX_TENTATIVAS) {\n      r.novo_estado = 'BLOQUEADO';\n      r.tentativas = 0;\n      r.bloqueio_min = BLOQUEIO_MIN;\n      r.evento = 'BLOQUEIO_CPF';\n      r.detalhe = `${t} tentativas incorretas`;\n      r.payload = botoes(`🔒 Os dígitos não conferem. Por segurança, nenhum documento foi enviado e a consulta foi bloqueada por ${BLOQUEIO_MIN} minutos.\\n\\n` +\n        'Se precisar de ajuda, fale com o RH.', BOT_RH_SAIR);\n    } else {\n      r.tentativas = t;\n      r.evento = 'CPF_INCORRETO';\n      r.detalhe = `tentativa ${t}`;\n      r.payload = botoes(`❌ Os dígitos não conferem com o cadastro. Você ainda tem ${MAX_TENTATIVAS - t} tentativa(s).\\n` +\n        'Digite novamente os 5 primeiros dígitos do seu CPF, ou fale com o RH.', BOT_RH_SAIR);\n    }\n  }\n\n} else if (estado.startsWith('POS_ENTREGA') && msg === 'seguir') {\n  seguir(estado.split(':')[1]);\n\n} else if (estado.startsWith('POS_ENTREGA') && !['1', '2', '3'].includes(msg) && !lerMes(ent.mensagem)) {\n  r.payload = botoes('Não entendi. Posso ajudar em algo mais?', BOT_POS);\n\n} else if (estado === 'AGUARDANDO_PERIODO' || estado === 'AGUARDANDO_MES' || estado.startsWith('POS_ENTREGA')) {\n  if (estado.startsWith('POS_ENTREGA')) estado = 'AGUARDANDO_PERIODO';\n  const mes = lerMes(ent.mensagem);\n  if (estado === 'AGUARDANDO_PERIODO' && msg === '1') {\n    buscar('ULTIMA');\n  } else if (estado === 'AGUARDANDO_PERIODO' && msg === '2') {\n    buscar('ULTIMAS_3');\n  } else if (estado === 'AGUARDANDO_PERIODO' && msg === '3') {\n    r.novo_estado = 'AGUARDANDO_MES';\n    r.payload = botoes('📅 Digite o mês e o ano do holerite no formato *MM/AAAA*.\\nExemplo: 05/2026', BOT_VOLTAR);\n  } else if (mes) {\n    buscar('MES', mes);\n  } else if (estado === 'AGUARDANDO_MES') {\n    r.payload = botoes('Não consegui entender a data. Use o formato *MM/AAAA* (exemplo: 05/2026).', BOT_VOLTAR);\n  } else {\n    r.payload = botoes('Não entendi. Escolha uma das opções abaixo:', BOT_PERIODOS);\n  }\n\n} else {\n  // Qualquer estado desconhecido volta ao menu\n  menu();\n}\n\n// Segurança: enquanto o bloqueio estiver valendo, nada (encerrar, menu, RH) tira o número do bloqueio\nif (bloqueadoAgora) {\n  r.novo_estado = 'BLOQUEADO';\n  if (r.acao === 'buscar_folha') { r.acao = 'enviar'; r.payload = null; }\n}\n\n// Garantia: nunca tentar enviar mensagem vazia\nif (r.acao === 'enviar' && !r.payload) r.acao = 'silencio';\n\nreturn { json: r };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        560
+      ],
+      "id": "1a657102-4116-4894-a31c-306258b93387",
+      "name": "Decidir Ação"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH upd AS (\n  UPDATE chatbot_sessoes SET\n    estado          = $2,\n    tentativas_cpf  = $3::int,\n    id_colaborador  = NULLIF($6::int, 0),\n    bloqueado_ate   = CASE WHEN $4::int > 0 THEN now() + ($4::int * interval '1 minute')\n                           WHEN $2 = 'BLOQUEADO' THEN bloqueado_ate\n                           ELSE NULL END,\n    atendimento_ate = CASE WHEN $5::int > 0 THEN now() + ($5::int * interval '1 minute')\n                           WHEN $2 = 'ATENDIMENTO_HUMANO' THEN atendimento_ate\n                           ELSE NULL END,\n    ultimo_wamid    = $9,\n    ultima_interacao = now()\n  WHERE telefone = $1\n  RETURNING telefone\n),\naud AS (\n  INSERT INTO auditoria_chatbot (telefone, id_colaborador, evento, detalhe)\n  SELECT $1, NULLIF($6::int, 0), $7, $8\n  WHERE $7 <> ''\n  RETURNING id\n)\nSELECT (SELECT count(*) FROM upd) AS sessao_atualizada,\n       (SELECT count(*) FROM aud) AS auditoria_gravada;\n",
+        "options": {
+          "queryReplacement": "={{ [ $json.telefone_envio, $json.novo_estado, $json.tentativas, $json.bloqueio_min, $json.atendimento_min, $json.id_colaborador, $json.evento, $json.detalhe, $json.wamid ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1184,
+        320
+      ],
+      "id": "4e3698be-53a2-4085-86cd-abb0ad6763e8",
+      "name": "Salvar Sessão e Auditoria",
+      "credentials": {
+        "postgres": {
+          "id": "SET_YOUR_CREDENTIAL",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "47c351dd-fcd0-4f99-9e5e-6f0a43de2cd4",
+                    "leftValue": "={{ $json.acao }}",
+                    "rightValue": "enviar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Enviar mensagem"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "18f13ffd-96d3-4e1c-befa-fec868d1c4ba",
+                    "leftValue": "={{ $json.acao }}",
+                    "rightValue": "buscar_folha",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Buscar holerite"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "25317be3-ba3b-4685-92e5-99c6a74ede72",
+                    "leftValue": "={{ $json.acao }}",
+                    "rightValue": "silencio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Sem resposta"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1184,
+        560
+      ],
+      "id": "6f147737-c389-4717-b11c-63ea9c1cc79b",
+      "name": "Rotear Ação"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/{{ $('Normalizar Entrada').first().json.phone_number_id }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2944,
+        368
+      ],
+      "id": "f35d72ff-da36-461e-ad9c-1fcfa8dae6d5",
+      "name": "Enviar Mensagem (Meta)",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_YOUR_CREDENTIAL",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1472,
+        768
+      ],
+      "id": "533e8b60-3e96-4c0b-957b-e21987b23327",
+      "name": "Sem resposta (atendimento humano / duplicada)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT f.caminho_arquivo,\n       to_char(f.mes_referencia, 'MM/YYYY') AS mes_label,\n       f.mes_referencia,\n       COALESCE(f.tipo_folha, 'Mensal') AS tipo_folha\nFROM folhas_pagamento f\nWHERE f.id_colaborador = $1\n  AND (\n       ($2 = 'ULTIMA' AND f.mes_referencia = (SELECT max(mes_referencia) FROM folhas_pagamento WHERE id_colaborador = $1))\n    OR ($2 = 'ULTIMAS_3' AND f.mes_referencia IN (SELECT DISTINCT mes_referencia FROM folhas_pagamento\n                                                   WHERE id_colaborador = $1\n                                                   ORDER BY mes_referencia DESC LIMIT 3))\n    OR ($2 = 'MES' AND date_trunc('month', f.mes_referencia) = date_trunc('month', $3::date))\n  )\nORDER BY f.mes_referencia DESC, f.tipo_folha;\n",
+        "options": {
+          "queryReplacement": "={{ [ $json.id_colaborador, $json.tipo_busca, $json.mes_ref ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1472,
+        560
+      ],
+      "id": "752949d0-edf6-476e-9be5-028a16f30076",
+      "name": "Buscar Folhas",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "SET_YOUR_CREDENTIAL",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "61e67e83-e73c-424f-b4df-6540852f3a8a",
+              "leftValue": "={{ $json.caminho_arquivo }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1680,
+        560
+      ],
+      "id": "ed3dca84-87fc-42e5-982e-14a5f4296679",
+      "name": "Encontrou holerite?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Chatbot RH - Holerites via WhatsApp | Autor: César Barth · 2026\nconst d = $('Decidir Ação').first().json;\nconst desc = d.tipo_busca === 'MES'\n  ? `de ${d.mes_ref.slice(5, 7)}/${d.mes_ref.slice(0, 4)}`\n  : 'disponível';\nreturn [{\n  json: {\n    payload: {\n      messaging_product: 'whatsapp', to: d.telefone_envio, type: 'interactive',\n      interactive: {\n        type: 'button',\n        body: { text: `📭 Não encontrei holerite ${desc} no sistema.\\nSe achar que é um erro, fale com o RH.\\n\\nPosso ajudar em algo mais?` },\n        action: { buttons: [\n          { type: 'reply', reply: { id: 'seguir', title: 'Seguir atendimento' } },\n          { type: 'reply', reply: { id: 'menu', title: 'Menu inicial' } },\n          { type: 'reply', reply: { id: 'encerrar', title: 'Encerrar' } }\n        ] }\n      }\n    }\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1952,
+        720
+      ],
+      "id": "2d83deb4-72ef-40b5-821d-b13d7f0c26a3",
+      "name": "Montar Msg - Sem Holerite"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.caminho_arquivo.replace(/\\\\/g, '/') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1952,
+        528
+      ],
+      "id": "4d52045d-f75b-4781-9214-086648ca3fa3",
+      "name": "Ler PDF do Disco",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Chatbot RH - Holerites via WhatsApp | Autor: César Barth · 2026\nconst d = $('Decidir Ação').first().json;\nreturn [{\n  json: {\n    payload: {\n      messaging_product: 'whatsapp', to: d.telefone_envio, type: 'interactive',\n      interactive: {\n        type: 'button',\n        body: { text: '⚠️ Encontrei o seu holerite no sistema, mas tive um problema para abrir o arquivo. Tente outro período ou fale com o RH pelo menu inicial.\\n\\nPosso ajudar em algo mais?' },\n        action: { buttons: [\n          { type: 'reply', reply: { id: 'seguir', title: 'Seguir atendimento' } },\n          { type: 'reply', reply: { id: 'menu', title: 'Menu inicial' } },\n          { type: 'reply', reply: { id: 'encerrar', title: 'Encerrar' } }\n        ] }\n      }\n    }\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2208,
+        720
+      ],
+      "id": "6c34b543-33ea-4176-85d7-f8c1a1a0c1e8",
+      "name": "Montar Msg - Erro no Arquivo"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/{{ $('Normalizar Entrada').first().json.phone_number_id }}/media",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "type",
+              "value": "application/pdf"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2208,
+        512
+      ],
+      "id": "b7ad5f29-a219-46ff-8e07-42e54ca41d5c",
+      "name": "Upload PDF (Meta)",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_YOUR_CREDENTIAL",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Chatbot RH - Holerites via WhatsApp | Autor: César Barth · 2026\n// Monta a mensagem de documento com o ID que a Meta devolveu no upload\nconst d = $('Decidir Ação').first().json;\nconst f = $('Buscar Folhas').item.json;\nconst mes = f.mes_label || '';\nconst tipo = f.tipo_folha || 'Mensal';\nreturn {\n  json: {\n    payload: {\n      messaging_product: 'whatsapp', to: d.telefone_envio, type: 'document',\n      document: { id: $json.id, filename: `Holerite_${tipo}_${mes.replace('/', '-')}.pdf`, caption: `📄 Holerite ${tipo} ${mes}` }\n    }\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2448,
+        512
+      ],
+      "id": "23d5c352-b6e8-41ab-979c-152392cf2bc4",
+      "name": "Montar Documento"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/{{ $('Normalizar Entrada').first().json.phone_number_id }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2688,
+        512
+      ],
+      "id": "20d91388-1a9e-498c-93b3-6d3cce0eb3b4",
+      "name": "Enviar PDF (Meta)",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET_YOUR_CREDENTIAL",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Chatbot RH - Holerites via WhatsApp | Autor: César Barth · 2026\n// Uma única mensagem final, independente de quantos PDFs foram enviados\nconst d = $('Decidir Ação').first().json;\nconst n = $input.all().length;\nreturn [{\n  json: {\n    payload: {\n      messaging_product: 'whatsapp', to: d.telefone_envio, type: 'interactive',\n      interactive: {\n        type: 'button',\n        body: { text: `✅ Pronto! Enviei ${n} holerite(s).\\n\\nPosso ajudar em algo mais?` },\n        action: { buttons: [\n          { type: 'reply', reply: { id: 'seguir', title: 'Seguir atendimento' } },\n          { type: 'reply', reply: { id: 'menu', title: 'Menu inicial' } },\n          { type: 'reply', reply: { id: 'encerrar', title: 'Encerrar' } }\n        ] }\n      }\n    }\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2688,
+        320
+      ],
+      "id": "b7ca0e35-b92e-4900-9d36-723a15806ed0",
+      "name": "Montar Msg - Concluído"
+    },
+    {
+      "parameters": {
+        "content": "## ✍️ Autoria\n**Chatbot RH - Holerites via WhatsApp**\nDesenvolvido por **César Barth** · 2026\n[linkedin.com/in/barthcesar07](https://www.linkedin.com/in/barthcesar07)\n\nn8n + PostgreSQL + WhatsApp Cloud API + Python",
+        "height": 192,
+        "width": 420,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        608,
+        992
+      ],
+      "id": "fd785299-ac9c-4bc3-b4e1-4ff1a0c2d9ac",
+      "name": "Autoria"
+    }
+  ],
+  "connections": {
+    "Verificação da Meta (GET)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Receber Mensagens WhatsApp (POST)": {
+      "main": [
+        [
+          {
+            "node": "É mensagem?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É mensagem?": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Entrada": {
+      "main": [
+        [
+          {
+            "node": "Buscar Contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Contexto": {
+      "main": [
+        [
+          {
+            "node": "Decidir Ação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decidir Ação": {
+      "main": [
+        [
+          {
+            "node": "Salvar Sessão e Auditoria",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Rotear Ação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rotear Ação": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem (Meta)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar Folhas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sem resposta (atendimento humano / duplicada)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Folhas": {
+      "main": [
+        [
+          {
+            "node": "Encontrou holerite?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Encontrou holerite?": {
+      "main": [
+        [
+          {
+            "node": "Ler PDF do Disco",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Montar Msg - Sem Holerite",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Msg - Sem Holerite": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem (Meta)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler PDF do Disco": {
+      "main": [
+        [
+          {
+            "node": "Upload PDF (Meta)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Montar Msg - Erro no Arquivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Msg - Erro no Arquivo": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem (Meta)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload PDF (Meta)": {
+      "main": [
+        [
+          {
+            "node": "Montar Documento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Documento": {
+      "main": [
+        [
+          {
+            "node": "Enviar PDF (Meta)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar PDF (Meta)": {
+      "main": [
+        [
+          {
+            "node": "Montar Msg - Concluído",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Msg - Concluído": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem (Meta)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "nodeGroups": [],
+  "tags": []
+}

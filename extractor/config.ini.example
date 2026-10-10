@@ -1,0 +1,19 @@
+; Copie este arquivo para config.ini e preencha com os dados do seu ambiente.
+; NUNCA publique o config.ini real (ele está no .gitignore).
+
+[banco]
+host = localhost
+porta = 5432
+banco = chatbot_rh
+usuario = chatbot
+senha = TROQUE_AQUI
+; caminho do psql, se não estiver no PATH
+psql = psql
+
+[pastas]
+; pasta compartilhada onde o RH coloca o PDF único da folha
+entrada = D:\RH\entrada
+processados = D:\RH\processados
+holerites = D:\ChatbotRH\pdfs\holerites
+pendencias = D:\RH\pendencias
+relatorios = D:\RH\relatorios
